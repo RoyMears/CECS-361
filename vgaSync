@@ -1,0 +1,118 @@
+module vgaSync(
+input wire clk, reset,
+output wire horizontalSync, verticalSync, videoOn, pixelTick,
+output wire [9:0] pixelX, pixelY
+);
+
+// VGA 640-by-480 sync parameters defined in book.
+
+localparam HD = 640; // horizontal display width
+localparam HBP = 48 ; // Back porch pixel width on the front (left) border
+localparam HFP = 16 ; // Front porch pixel width on the back (right) border
+localparam HR = 96 ; // Retrace horizontal return region 
+
+localparam VD = 480; // vertical display area
+localparam VBP = 10; // Back porch pixel width on front (top) border
+localparam VFP = 33; // Front porch pixel width on back (bottom) border
+localparam VR = 2; //  Retrace return virtical region
+
+// clock variable
+reg divided25Mhz;
+
+// sync counters
+reg [9:0] horizontalCount; 
+reg [9:0] nextHorizontalCount; 
+reg [9:0] verticalCount; 
+reg [9:0] nextVerticalCount;  
+
+// buffers used in output
+reg vSyncReg;
+reg hSyncReg;
+wire vSyncNext;
+wire hSyncNext;
+
+// status signal
+wire horizontalEnd;
+wire verticalEnd;
+
+always @(posedge clk , posedge reset)
+    if (reset)begin       
+    verticalCount <= 0;
+    horizontalCount <= 0;
+    vSyncReg <= 0;
+    hSyncReg <= 0;
+end
+else
+    begin
+        verticalCount <= nextVerticalCount;
+        horizontalCount <= nextHorizontalCount;
+        vSyncReg <= vSyncNext;
+        hSyncReg <= hSyncNext;
+end
+
+
+// generate a 25Mhz enable tick
+integer i = 0;
+always @(posedge clk) begin
+   if (i == 1)begin
+       divided25Mhz <= ~divided25Mhz; // flip clock
+       i <= 0;
+    end
+    else begin
+       i <= i+1;
+       divided25Mhz <= divided25Mhz; // store value
+    end
+end
+
+
+
+
+// flagging signals denoting end of sides
+assign horizontalEnd = (horizontalCount == (HD + HBP + HFP + HR - 1));// end is true when count == maximum (0-799)
+
+assign verticalEnd = (verticalCount == (VD + VBP + VFP + VR - 1)); // end is true when count == maximum (0-524)
+
+
+
+
+always @*// horizontal synchronization counter logic
+    if (divided25Mhz) // 25 MHz pulse
+        if (horizontalEnd)
+            nextHorizontalCount = 0;
+    else
+        nextHorizontalCount = horizontalCount + 1;
+    else
+        nextHorizontalCount = horizontalCount;
+        
+        
+        
+always @*// vertical synchronization counter logic
+    if (divided25Mhz & horizontalEnd)// 25 MHz pulse and end of horizontal line
+        if (verticalEnd)
+            nextVerticalCount = 0;
+    else
+        nextVerticalCount = verticalCount + 1;
+    else
+        nextVerticalCount = verticalCount;
+
+
+// horizontal and vertical sync
+// recomended buffer to avoid glitch
+
+// raise next only when in specified range
+assign hSyncNext = (horizontalCount >= (HD + HFP) && horizontalCount <= (HD + HFP + HR - 1)); // horizontal count >= 656, and horizontal count <= 751
+
+// raise next only when in specified range
+assign vSyncNext = (verticalCount >= (VD + VBP) && verticalCount <= (VD + VBP + VR - 1)); // vertial count >= 490, and vertical count <= 491
+
+
+assign videoOn = (horizontalCount < HD) && (verticalCount < VD); // only raise video_on when in display area
+
+
+assign horizontalSync = hSyncReg;
+assign verticSync = vSyncReg;
+assign pixelX = horizontalCount;
+assign pixelY = verticalCount;
+assign pixelTick = divided25Mhz;
+
+endmodule 
